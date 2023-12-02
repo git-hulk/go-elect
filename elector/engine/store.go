@@ -21,7 +21,7 @@ func NewSessionStore(c SessionClient) *SessionStore {
 
 func (store *SessionStore) Create(ctx context.Context, key, id string, timeout time.Duration) (Session, error) {
 	if v, ok := store.sessions.Load(key); ok {
-		session := v.(*LockSession)
+		session, _ := v.(Session)
 		if session.ID() == id {
 			return session, nil
 		}
@@ -42,15 +42,17 @@ func (store *SessionStore) Delete(ctx context.Context, key string) error {
 	if !ok {
 		return ErrNotLockHolder
 	}
+	session, _ := v.(Session)
 
-	return v.(Session).Release(ctx)
+	return session.Release(ctx)
 }
 
 // Close all sessions and release the lock if held by any session
 func (store *SessionStore) Close(ctx context.Context) error {
-	store.sessions.Range(func(key, _ any) bool {
-		if err := store.Delete(ctx, key.(string)); err != nil {
-			internal.GetLogger().Printf("Failed to delete session[%s], err: %v", key.(string), err)
+	store.sessions.Range(func(k, _ any) bool {
+		key, _ := k.(string)
+		if err := store.Delete(ctx, key); err != nil {
+			internal.GetLogger().Printf("Failed to delete session[%s], err: %v", key, err)
 		}
 		return true
 	})

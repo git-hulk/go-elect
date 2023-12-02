@@ -3,10 +3,11 @@ package engine
 import (
 	"context"
 	"errors"
-	"go-elect/internal"
-	"go.uber.org/atomic"
 	"sync"
 	"time"
+
+	"go-elect/internal"
+	"go.uber.org/atomic"
 )
 
 const (

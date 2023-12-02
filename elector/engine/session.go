@@ -12,6 +12,9 @@ type SessionClient interface {
 }
 
 type Session interface {
+	ID() string
+	Key() string
+	Timeout() time.Duration
 	IsLeader() bool
 	Resign(ctx context.Context) error
 	Release(ctx context.Context) error
