@@ -29,7 +29,11 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Make Lint
-        run: make lint
+        run: |
+          export GOPATH=$HOME/go
+          export PATH=$PATH:$GOPATH/bin
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.52.2
+          make lint
 
       - name: Test
         run: make test
