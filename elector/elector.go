@@ -3,17 +3,16 @@ package elector
 import (
 	"context"
 	"errors"
+	"go.uber.org/atomic"
 	"sync"
 	"time"
 
-	"go-elect/elector/store"
+	"go-elect/elector/engine"
 
 	"github.com/google/uuid"
-	"go.uber.org/atomic"
 )
 
 const (
-	maxHeartbeatInterval = 10 * time.Second
 	minHeartbeatInterval = 100 * time.Millisecond
 
 	// the heartbeat interval will be sessionTimeout / sessionCheckCount
@@ -32,41 +31,32 @@ type Runner interface {
 }
 
 type Elector struct {
-	state  atomic.Int32
-	runner Runner
-	engine store.Engine
-
-	key            string
-	sessionID      string
-	sessionTimeout time.Duration
-	lastResigned   time.Time
-
-	isLeader        atomic.Bool
-	leaderChangedCh chan struct{}
+	runner  Runner
+	session engine.Session
+	state   atomic.Int32
 
 	wg         sync.WaitGroup
 	shutdownCh chan struct{}
 }
 
 // New is used to create an elector instance
-func New(e store.Engine, key string, sessionTimeout time.Duration, runner Runner) (*Elector, error) {
-	if e == nil || runner == nil {
-		return nil, errors.New("engine and runner cannot be nil")
+func New(store *engine.SessionStore, key string, sessionTimeout time.Duration, runner Runner) (*Elector, error) {
+	if store == nil || runner == nil {
+		return nil, errors.New("store and runner cannot be nil")
 	}
 	if key == "" {
 		return nil, errors.New("key cannot be empty")
 	}
-	if sessionTimeout < sessionCheckCount*minHeartbeatInterval {
-		return nil, errors.New("session timeout is too short")
+
+	sessionID := uuid.NewString()
+	session, err := store.Create(context.Background(), key, sessionID, sessionTimeout)
+	if err != nil {
+		return nil, err
 	}
 	elector := &Elector{
-		runner:          runner,
-		engine:          e,
-		key:             key,
-		sessionID:       uuid.NewString(),
-		sessionTimeout:  sessionTimeout,
-		leaderChangedCh: make(chan struct{}),
-		shutdownCh:      make(chan struct{}),
+		runner:     runner,
+		session:    session,
+		shutdownCh: make(chan struct{}),
 	}
 	elector.state.Store(electStateNone)
 	return elector, nil
@@ -78,40 +68,16 @@ func (e *Elector) Run(ctx context.Context) error {
 		return errors.New("elector already started")
 	}
 
-	isLeader, err := e.tryElect(ctx, e.key, e.sessionTimeout)
-	if err != nil {
-		return err
-	}
-	e.isLeader.Store(isLeader)
-
-	go e.runLoop(ctx)
+	go e.loop(ctx)
 	return nil
 }
 
 // IsLeader is used to check if the elector is leader
 func (e *Elector) IsLeader() bool {
-	return e.isLeader.Load()
+	return e.session.IsLeader()
 }
 
-func (e *Elector) tryElect(ctx context.Context, key string, sessionTimeout time.Duration) (bool, error) {
-	err := e.engine.Elect(ctx, key, e.sessionID, sessionTimeout)
-	if err != nil && err != store.ErrLeaderElected {
-		return false, err
-	}
-	return err == nil, nil
-}
-
-func (e *Elector) notifyLeaderChanged() {
-	if e.state.Load() != electStateRunning {
-		return
-	}
-	select {
-	case e.leaderChangedCh <- struct{}{}:
-	default:
-	}
-}
-
-func (e *Elector) runLoop(ctx context.Context) {
+func (e *Elector) loop(ctx context.Context) {
 	e.wg.Add(1)
 	defer e.wg.Done()
 
@@ -120,10 +86,8 @@ func (e *Elector) runLoop(ctx context.Context) {
 		select {
 		case <-e.shutdownCh:
 			return
-		case <-e.leaderChangedCh:
-			// TODO: log leader changed
 		default:
-			if e.isLeader.Load() {
+			if e.session.IsLeader() {
 				err = e.runner.RunAsLeader(ctx)
 			} else {
 				err = e.runner.RunAsObserver(ctx)
@@ -135,22 +99,9 @@ func (e *Elector) runLoop(ctx context.Context) {
 	}
 }
 
-// Resign is used to resign the leader, it will return ErrNoLockHolder if not leader
-func (e *Elector) Resign() error {
-	if !e.isLeader.Load() {
-		return store.ErrNoLockHolder
-	}
-	if err := e.engine.Resign(context.Background(), e.key); err != nil {
-		if errors.Is(err, store.ErrNoLockHolder) {
-			return store.ErrNoLockHolder
-		}
-		return err
-	}
-
-	e.lastResigned = time.Now()
-	e.isLeader.Store(false)
-	e.notifyLeaderChanged()
-	return nil
+// Resign is used to resign the leader, it will return ErrNotLockHolder if not leader
+func (e *Elector) Resign(ctx context.Context) error {
+	return e.session.Resign(ctx)
 }
 
 // Stop is used to stop the elector instance
@@ -161,11 +112,6 @@ func (e *Elector) Stop() error {
 	e.state.Store(electStateStopped)
 
 	close(e.shutdownCh)
-	close(e.leaderChangedCh)
 	e.wg.Wait()
-
-	if e.isLeader.Load() {
-		return e.engine.Resign(context.Background(), e.key)
-	}
-	return nil
+	return e.session.Release(context.Background())
 }

@@ -1,4 +1,4 @@
-package store
+package engine
 
 import (
 	"context"
@@ -19,8 +19,7 @@ func newSessionStore(c SessionClient) *SessionStore {
 	}
 }
 
-// Acquire is used to elect a leader, it will return ErrLeaderElected if already elected
-func (store *SessionStore) Acquire(ctx context.Context, key, sessionID string, sessionTimeout time.Duration) (Session, error) {
+func (store *SessionStore) Create(ctx context.Context, key, sessionID string, sessionTimeout time.Duration) (Session, error) {
 	if v, ok := store.sessions.Load(key); ok {
 		session := v.(*LockSession)
 		if session.Owner() == sessionID {
@@ -37,14 +36,14 @@ func (store *SessionStore) Acquire(ctx context.Context, key, sessionID string, s
 	return session, nil
 }
 
-// Resign is used to release the lock, it will return ErrNoLockHolder if not held
-func (store *SessionStore) Resign(_ context.Context, key string) error {
+// Resign is used to release the lock, it will return ErrNotLockHolder if not held
+func (store *SessionStore) Resign(ctx context.Context, key string) error {
 	v, ok := store.sessions.LoadAndDelete(key)
 	if !ok {
-		return ErrNoLockHolder
+		return ErrNotLockHolder
 	}
 
-	return v.(Session).Release()
+	return v.(Session).Release(ctx)
 }
 
 // Stop is used to stop the leader election and release the lock if held

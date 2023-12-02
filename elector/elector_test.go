@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"go-elect/elector/store"
+	"go-elect/elector/engine"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
@@ -28,7 +28,7 @@ func (r *CountRunner) RunAsObserver(_ context.Context) error {
 
 func TestElector(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
-	redisEngine := store.New(redisClient)
+	redisEngine := engine.NewRedisStore(redisClient)
 
 	key := "test-elector1-key"
 	sessionTimeout := 3 * time.Second
@@ -57,7 +57,7 @@ func TestElector(t *testing.T) {
 	})
 
 	t.Run("resign", func(t *testing.T) {
-		require.NoError(t, elector1.Resign())
+		require.NoError(t, elector1.Resign(context.Background()))
 		require.False(t, elector1.IsLeader())
 		require.Eventually(t, func() bool {
 			return elector2.IsLeader()

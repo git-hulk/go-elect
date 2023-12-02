@@ -1,8 +1,8 @@
-package store
+package engine
 
 import "errors"
 
 var (
 	ErrLeaderElected = errors.New("leader already elected")
-	ErrNoLockHolder  = errors.New("no lock holder")
+	ErrNotLockHolder = errors.New("you're not lock holder")
 )

@@ -1,4 +1,4 @@
-package store
+package engine
 
 import (
 	"context"
@@ -19,7 +19,7 @@ type redisLock struct {
 	internal *redislock.Lock
 }
 
-func newRedisLock(l *redislock.Lock) Lock {
+func wrapRedisLock(l *redislock.Lock) Lock {
 	return &redisLock{
 		internal: l,
 	}
@@ -30,11 +30,21 @@ func (l *redisLock) Owner() string {
 }
 
 func (l *redisLock) Release(ctx context.Context) error {
-	return l.internal.Release(ctx)
+	if err := l.internal.Release(ctx); err != nil {
+		if errors.Is(err, redislock.ErrLockNotHeld) {
+			return ErrNotLockHolder
+		}
+	}
+	return nil
 }
 
 func (l *redisLock) Refresh(ctx context.Context, lease time.Duration) error {
-	return l.internal.Refresh(ctx, lease, nil)
+	if err := l.internal.Refresh(ctx, lease, nil); err != nil {
+		if errors.Is(err, redislock.ErrLockNotHeld) {
+			return ErrNotLockHolder
+		}
+	}
+	return nil
 }
 
 type redisSessionClient struct {
@@ -43,8 +53,8 @@ type redisSessionClient struct {
 
 func (c *redisSessionClient) TryLock(ctx context.Context, id, key string, timeout time.Duration) (Lock, error) {
 	lock, err := c.client.Obtain(ctx, key, timeout, &redislock.Options{
+		Token: id,
 		// No retry strategy to achieve a non-blocking lock
-		Token:         id,
 		RetryStrategy: redislock.NoRetry(),
 	})
 	if err != nil {
@@ -53,13 +63,9 @@ func (c *redisSessionClient) TryLock(ctx context.Context, id, key string, timeou
 		}
 		return nil, err
 	}
-	return newRedisLock(lock), nil
+	return wrapRedisLock(lock), nil
 }
 
 func (c *redisSessionClient) Create(ctx context.Context, id, key string, timeout time.Duration) (Session, error) {
-	lock, err := c.TryLock(ctx, id, key, timeout)
-	if err != nil {
-		return nil, err
-	}
-	return NewLockSession(ctx, c, id, key, timeout), lock.Release(ctx)
+	return NewLockSession(ctx, c, id, key, timeout), nil
 }
