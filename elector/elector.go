@@ -3,6 +3,7 @@ package elector
 import (
 	"context"
 	"errors"
+	"go-elect/internal"
 	"go.uber.org/atomic"
 	"sync"
 	"time"
@@ -10,13 +11,6 @@ import (
 	"go-elect/elector/engine"
 
 	"github.com/google/uuid"
-)
-
-const (
-	minHeartbeatInterval = 100 * time.Millisecond
-
-	// the heartbeat interval will be sessionTimeout / sessionCheckCount
-	sessionCheckCount = 5
 )
 
 const (
@@ -62,7 +56,7 @@ func New(store *engine.SessionStore, key string, sessionTimeout time.Duration, r
 	return elector, nil
 }
 
-// Run is used to start the elector instance and send heartbeats periodically
+// Run is used to start the elector instance
 func (e *Elector) Run(ctx context.Context) error {
 	if !e.state.CompareAndSwap(electStateNone, electStateRunning) {
 		return errors.New("elector already started")
@@ -81,6 +75,7 @@ func (e *Elector) loop(ctx context.Context) {
 	e.wg.Add(1)
 	defer e.wg.Done()
 
+	var role string
 	var err error
 	for {
 		select {
@@ -88,24 +83,26 @@ func (e *Elector) loop(ctx context.Context) {
 			return
 		default:
 			if e.session.IsLeader() {
+				role = "leader"
 				err = e.runner.RunAsLeader(ctx)
 			} else {
+				role = "observer"
 				err = e.runner.RunAsObserver(ctx)
 			}
 			if err != nil {
-				// TODO: log error
+				internal.GetLogger().Printf("[%s] run error: %v", role, err)
 			}
 		}
 	}
 }
 
-// Resign is used to resign the leader, it will return ErrNotLockHolder if not leader
+// Delete is used to release the lock if held and session will be kept
 func (e *Elector) Resign(ctx context.Context) error {
 	return e.session.Resign(ctx)
 }
 
-// Stop is used to stop the elector instance
-func (e *Elector) Stop() error {
+// Release is used to stop the elector instance and release the session
+func (e *Elector) Release() error {
 	if e.state.Load() == electStateStopped {
 		return nil
 	}

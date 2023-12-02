@@ -2,7 +2,7 @@ package engine
 
 import (
 	"context"
-	"errors"
+	"go-elect/internal"
 	"sync"
 	"time"
 )
@@ -13,21 +13,21 @@ type SessionStore struct {
 	sessions sync.Map
 }
 
-func newSessionStore(c SessionClient) *SessionStore {
+func NewSessionStore(c SessionClient) *SessionStore {
 	return &SessionStore{
 		client: c,
 	}
 }
 
-func (store *SessionStore) Create(ctx context.Context, key, sessionID string, sessionTimeout time.Duration) (Session, error) {
+func (store *SessionStore) Create(ctx context.Context, key, id string, timeout time.Duration) (Session, error) {
 	if v, ok := store.sessions.Load(key); ok {
 		session := v.(*LockSession)
-		if session.Owner() == sessionID {
-			return nil, errors.New("you're running as a leader now")
+		if session.ID() == id {
+			return session, nil
 		}
 	}
 
-	session, err := store.client.Create(ctx, sessionID, key, sessionTimeout)
+	session, err := store.client.Create(ctx, id, key, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -36,8 +36,8 @@ func (store *SessionStore) Create(ctx context.Context, key, sessionID string, se
 	return session, nil
 }
 
-// Resign is used to release the lock, it will return ErrNotLockHolder if not held
-func (store *SessionStore) Resign(ctx context.Context, key string) error {
+// Delete will release the lock if held and session will be kept
+func (store *SessionStore) Delete(ctx context.Context, key string) error {
 	v, ok := store.sessions.LoadAndDelete(key)
 	if !ok {
 		return ErrNotLockHolder
@@ -46,11 +46,11 @@ func (store *SessionStore) Resign(ctx context.Context, key string) error {
 	return v.(Session).Release(ctx)
 }
 
-// Stop is used to stop the leader election and release the lock if held
-func (store *SessionStore) Stop(ctx context.Context) error {
+// Close all sessions and release the lock if held by any session
+func (store *SessionStore) Close(ctx context.Context) error {
 	store.sessions.Range(func(key, _ any) bool {
-		if err := store.Resign(ctx, key.(string)); err != nil {
-			// TODO: log error
+		if err := store.Delete(ctx, key.(string)); err != nil {
+			internal.GetLogger().Printf("Failed to delete session[%s], err: %v", key.(string), err)
 		}
 		return true
 	})
