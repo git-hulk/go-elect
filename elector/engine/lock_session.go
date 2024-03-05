@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go-elect/internal"
+
 	"go.uber.org/atomic"
 )
 
@@ -44,7 +45,13 @@ func NewLockSession(ctx context.Context, mu Mutex) (Session, error) {
 		shutdownCh: make(chan struct{}),
 	}
 	session.state.Store(sessionStateInit)
-	go session.refresh(ctx)
+
+	session.wg.Add(1)
+	go func() {
+		defer session.wg.Done()
+		session.refresh(ctx)
+	}()
+
 	return session, nil
 }
 
@@ -69,9 +76,6 @@ func (s *LockSession) GetHeartbeatInterval() time.Duration {
 
 // refresh will try to elect leader if not leader, or extend lease if leader
 func (s *LockSession) refresh(ctx context.Context) {
-	s.wg.Add(1)
-	defer s.wg.Done()
-
 	interval := s.GetHeartbeatInterval()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
