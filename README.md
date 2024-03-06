@@ -28,13 +28,8 @@ type CountRunner struct {
     count atomic.Int32
 }
 
-func (r *CountRunner) RunAsLeader(_ context.Context) error {
+func (r *CountRunner) Run(_ context.Context) error {
     r.count.Inc()
-    time.Sleep(100 * time.Millisecond)
-    return nil
-}
-
-func (r *CountRunner) RunAsObserver(_ context.Context) error {
     time.Sleep(100 * time.Millisecond)
     return nil
 }

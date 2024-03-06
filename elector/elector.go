@@ -20,8 +20,7 @@ const (
 )
 
 type Runner interface {
-	RunAsLeader(ctx context.Context) error
-	RunAsObserver(ctx context.Context) error
+	Run(ctx context.Context) error
 }
 
 type Elector struct {
@@ -88,10 +87,7 @@ func (e *Elector) loop(ctx context.Context) {
 		default:
 			if e.session.IsLeader() {
 				role = "leader"
-				err = e.runner.RunAsLeader(ctx)
-			} else {
-				role = "observer"
-				err = e.runner.RunAsObserver(ctx)
+				err = e.runner.Run(ctx)
 			}
 			if err != nil {
 				internal.GetLogger().Printf("[%s:%s] run error: %v", e.session.ID(), role, err)
