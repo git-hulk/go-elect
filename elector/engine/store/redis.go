@@ -8,7 +8,7 @@ import (
 
 	"github.com/bsm/redislock"
 
-	"go-elect/elector/engine"
+	"github.com/git-hulk/go-elect/elector/engine"
 )
 
 // RedisMutex implements engine.Mutex, it uses redislock to implement distributed mutex.

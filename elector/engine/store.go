@@ -2,9 +2,10 @@ package engine
 
 import (
 	"context"
-	"go-elect/internal"
 	"sync"
 	"time"
+
+	"github.com/git-hulk/go-elect/internal"
 )
 
 type SessionStore struct {

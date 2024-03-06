@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"go-elect/internal"
+	"github.com/git-hulk/go-elect/internal"
 
 	"go.uber.org/atomic"
 )

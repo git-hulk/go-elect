@@ -3,14 +3,14 @@ package elector
 import (
 	"context"
 	"errors"
-	"go-elect/internal"
-	"go.uber.org/atomic"
 	"sync"
 	"time"
 
-	"go-elect/elector/engine"
-
 	"github.com/google/uuid"
+	"go.uber.org/atomic"
+
+	"github.com/git-hulk/go-elect/elector/engine"
+	"github.com/git-hulk/go-elect/internal"
 )
 
 const (
@@ -62,7 +62,11 @@ func (e *Elector) Run(ctx context.Context) error {
 		return errors.New("elector already started")
 	}
 
-	go e.loop(ctx)
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.loop(ctx)
+	}()
 	return nil
 }
 
@@ -72,14 +76,14 @@ func (e *Elector) IsLeader() bool {
 }
 
 func (e *Elector) loop(ctx context.Context) {
-	e.wg.Add(1)
-	defer e.wg.Done()
-
 	var role string
 	var err error
 	for {
 		select {
 		case <-e.shutdownCh:
+			internal.GetLogger().Printf("elector[%s] on key[%s] was stopped while receiving shutdown signal",
+				e.session.ID(),
+				e.session.Key())
 			return
 		default:
 			if e.session.IsLeader() {
@@ -90,25 +94,27 @@ func (e *Elector) loop(ctx context.Context) {
 				err = e.runner.RunAsObserver(ctx)
 			}
 			if err != nil {
-				internal.GetLogger().Printf("[%s] run error: %v", role, err)
+				internal.GetLogger().Printf("[%s:%s] run error: %v", e.session.ID(), role, err)
 			}
 		}
 	}
 }
 
-// Delete is used to release the lock if held and session will be kept
+// Resign is used to resign the leader if the elector is leader role now
 func (e *Elector) Resign(ctx context.Context) error {
 	return e.session.Resign(ctx)
 }
 
 // Release is used to stop the elector instance and release the session
-func (e *Elector) Release() error {
-	if e.state.Load() == electStateStopped {
+func (e *Elector) Release(ctx context.Context) error {
+	if !e.state.CompareAndSwap(electStateRunning, electStateStopped) {
 		return nil
 	}
-	e.state.Store(electStateStopped)
 
 	close(e.shutdownCh)
+	return e.session.Release(ctx)
+}
+
+func (e *Elector) Wait() {
 	e.wg.Wait()
-	return e.session.Release(context.Background())
 }

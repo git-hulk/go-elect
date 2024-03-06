@@ -2,13 +2,15 @@ package elector
 
 import (
 	"context"
-	"go-elect/elector/engine/store"
-	"go.uber.org/atomic"
 	"testing"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+
+	"github.com/git-hulk/go-elect/elector/engine/store"
 )
 
 type CountRunner struct {
@@ -27,6 +29,7 @@ func (r *CountRunner) RunAsObserver(_ context.Context) error {
 }
 
 func TestElector(t *testing.T) {
+	ctx := context.Background()
 	redisClient := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
 	redisStore := store.NewRedisStore(redisClient)
 	defer func() {
@@ -41,7 +44,8 @@ func TestElector(t *testing.T) {
 	// basic elect test
 	elector1, err := New(redisStore, key, sessionTimeout, runner)
 	defer func() {
-		require.NoError(t, elector1.Release())
+		require.NoError(t, elector1.Release(ctx))
+		elector1.Wait()
 	}()
 	require.NoError(t, err)
 	require.NoError(t, elector1.Run(context.Background()))
@@ -49,7 +53,8 @@ func TestElector(t *testing.T) {
 
 	elector2, err := New(redisStore, key, sessionTimeout, runner)
 	defer func() {
-		require.NoError(t, elector2.Release())
+		require.NoError(t, elector2.Release(ctx))
+		elector2.Wait()
 	}()
 	require.NoError(t, err)
 	require.NoError(t, elector2.Run(context.Background()))
@@ -69,7 +74,7 @@ func TestElector(t *testing.T) {
 	})
 
 	t.Run("stop", func(t *testing.T) {
-		require.NoError(t, elector2.Release())
+		require.NoError(t, elector2.Release(ctx))
 
 		// need to wait for a longer time since the elector1 may be still in resign yield period
 		require.Eventually(t, func() bool {

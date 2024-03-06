@@ -1,4 +1,4 @@
-module go-elect
+module github.com/git-hulk/go-elect
 
 go 1.18
 
