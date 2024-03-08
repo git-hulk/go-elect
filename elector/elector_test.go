@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/git-hulk/go-elect/elector/engine"
+	"github.com/git-hulk/go-elect/elector/engine/store"
+	"github.com/redis/go-redis/v9"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/atomic"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
-
-	"github.com/git-hulk/go-elect/elector/engine/store"
 )
 
 type CountRunner struct {
@@ -23,36 +24,53 @@ func (r *CountRunner) Run(_ context.Context) error {
 	return nil
 }
 
-func TestElector(t *testing.T) {
-	ctx := context.Background()
-	redisClient := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
-	redisStore := store.NewRedisStore(redisClient)
+func TestRedisElector(t *testing.T) {
+	redisClient := redis.NewClient(&redis.Options{})
 	defer func() {
 		require.NoError(t, redisClient.Close())
-		require.NoError(t, redisStore.Close(context.Background()))
 	}()
+
+	testElector(t, store.NewRedisStore(redisClient))
+}
+
+func TestEtcdElector(t *testing.T) {
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints: []string{"localhost:2379"},
+	})
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, etcdClient.Close())
+	}()
+	testElector(t, store.NewEtcdStore(etcdClient))
+}
+
+func testElector(t *testing.T, store *engine.SessionStore) {
+	ctx := context.Background()
 
 	key := "test-elector1-key"
 	sessionTimeout := 3 * time.Second
 	runner := &CountRunner{}
 
 	// basic elect test
-	elector1, err := New(redisStore, key, sessionTimeout, runner)
+	elector1, err := New(store, key, sessionTimeout, runner)
 	defer func() {
 		require.NoError(t, elector1.Release(ctx))
 		elector1.Wait()
 	}()
 	require.NoError(t, err)
 	require.NoError(t, elector1.Run(context.Background()))
-	require.True(t, elector1.IsLeader())
+	require.Eventually(t, func() bool {
+		return elector1.IsLeader()
+	}, sessionTimeout, 100*time.Millisecond)
 
-	elector2, err := New(redisStore, key, sessionTimeout, runner)
+	elector2, err := New(store, key, sessionTimeout, runner)
 	defer func() {
 		require.NoError(t, elector2.Release(ctx))
 		elector2.Wait()
 	}()
 	require.NoError(t, err)
-	require.NoError(t, elector2.Run(context.Background()))
+
+	require.NoError(t, elector2.Run(ctx))
 	require.False(t, elector2.IsLeader())
 
 	t.Run("check count", func(t *testing.T) {
@@ -62,9 +80,8 @@ func TestElector(t *testing.T) {
 
 	t.Run("resign", func(t *testing.T) {
 		require.NoError(t, elector1.Resign(context.Background()))
-		require.False(t, elector1.IsLeader())
 		require.Eventually(t, func() bool {
-			return elector2.IsLeader()
+			return elector2.IsLeader() && !elector1.IsLeader()
 		}, sessionTimeout, 100*time.Millisecond)
 	})
 
