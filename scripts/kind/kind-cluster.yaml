@@ -1,0 +1,11 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: dev-cls
+networking:
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.111.0.0/16"
+nodes:
+- role: control-plane
+  image: kindest/node:v1.23.4
+- role: worker
+  image: kindest/node:v1.23.4
