@@ -2,12 +2,13 @@ package store
 
 import (
 	"context"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"testing"
-	"time"
 )
 
 const K8sConfigPath = "../../../k8s.yaml"

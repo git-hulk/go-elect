@@ -2,17 +2,17 @@ package store
 
 import (
 	"context"
-	"github.com/git-hulk/go-elect/internal"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
-	"k8s.io/utils/clock"
 	"sync"
 	"time"
 
-	"github.com/git-hulk/go-elect/elector/engine"
-
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/utils/clock"
+
+	"github.com/git-hulk/go-elect/elector/engine"
+	"github.com/git-hulk/go-elect/internal"
 )
 
 type K8sMutex struct {
